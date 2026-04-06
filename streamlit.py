@@ -48,8 +48,14 @@ def load_and_train_models():
     
     # 6. Create Baseline for UI Input
     baseline = features_only.iloc[[0]].copy()
-    baseline[numerical_cols] = features_only[numerical_cols].median().values
-    baseline[categorical_cols] = features_only[categorical_cols].mode().iloc[0].values
+    
+    # Only calculate median if there are numerical columns
+    if len(numerical_cols) > 0:
+        baseline[numerical_cols] = features_only[numerical_cols].median().values
+        
+    # Only calculate mode if there are categorical columns
+    if len(categorical_cols) > 0:
+        baseline[categorical_cols] = features_only[categorical_cols].mode().iloc[0].values
     
     return preprocessor, iso_forest, knn_proxy, baseline
 
