@@ -11,16 +11,25 @@ st.set_page_config(page_title="AI Phishing Detector", layout="centered")
 
 @st.cache_resource
 def load_and_train_model():
-    # 1. Load your dataset (ensure StealthPhisher2025.csv is in the same folder)
+    # 1. Load your dataset
     df = pd.read_csv('StealthPhisher_mini.csv')
-    generated_df = df.sample(n=5000, random_state=42)
+    
+    # FIX: Ensure we don't try to sample more rows than exist
+    sample_size = min(len(df), 5000)
+    generated_df = df.sample(n=sample_size, random_state=42)
     
     # 2. Data Preparation
-    features_only = generated_df.drop(columns=['Label', 'url']) if 'url' in generated_df.columns else generated_df.drop(columns=['Label'])
+    # Check if 'url' column exists before dropping it
+    drop_cols = ['Label']
+    if 'url' in generated_df.columns:
+        drop_cols.append('url')
+        
+    features_only = generated_df.drop(columns=drop_cols)
+    
     numerical_cols = features_only.select_dtypes(include=['int64', 'float64']).columns.tolist()
     categorical_cols = features_only.select_dtypes(include=['object', 'category']).columns.tolist()
     
-    # 3. Build Pipeline (Using RobustScaler for your anomalies)
+    # 3. Build Pipeline
     preprocessor = ColumnTransformer(transformers=[
         ('num', RobustScaler(), numerical_cols),
         ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols)
@@ -33,7 +42,7 @@ def load_and_train_model():
     
     model.fit(features_only)
     
-    # 4. Create a baseline for user inputs
+    # 4. Create Baseline Template
     baseline = features_only.iloc[[0]].copy()
     baseline[numerical_cols] = features_only[numerical_cols].median().values
     baseline[categorical_cols] = features_only[categorical_cols].mode().iloc[0].values
