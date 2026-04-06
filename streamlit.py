@@ -2,87 +2,107 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import IsolationForest
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from sklearn.cluster import DBSCAN
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="AI Phishing Detector", layout="centered")
+st.set_page_config(page_title="Dual-Model Phishing Lab", layout="wide")
 
 @st.cache_resource
-def load_and_train_model():
-    # 1. Load your dataset
-    df = pd.read_csv('StealthPhisher_mini.csv')
-    
-    # FIX: Ensure we don't try to sample more rows than exist
-    sample_size = min(len(df), 5000)
-    generated_df = df.sample(n=sample_size, random_state=42)
-    
-    # 2. Data Preparation
-    # Check if 'url' column exists before dropping it
-    drop_cols = ['Label']
-    if 'url' in generated_df.columns:
-        drop_cols.append('url')
-        
-    features_only = generated_df.drop(columns=drop_cols)
-    
+def load_and_train_models():
+    # 1. Load your 5,000 row dataset
+    # Ensure this filename matches exactly what you uploaded to GitHub!
+    try:
+        df = pd.read_csv('StealthPhisher_mini.csv') 
+    except FileNotFoundError:
+        # Fallback to original name if you didn't rename it
+        df = pd.read_csv('StealthPhisher2025.csv')
+
+    # 2. Select features
+    features_only = df.drop(columns=['Label', 'url']) if 'url' in df.columns else df.drop(columns=['Label'])
     numerical_cols = features_only.select_dtypes(include=['int64', 'float64']).columns.tolist()
     categorical_cols = features_only.select_dtypes(include=['object', 'category']).columns.tolist()
     
-    # 3. Build Pipeline
+    # 3. Build Preprocessor
     preprocessor = ColumnTransformer(transformers=[
         ('num', RobustScaler(), numerical_cols),
         ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols)
     ])
+    X_processed = preprocessor.fit_transform(features_only)
+
+    # 4. Isolation Forest 
+    iso_forest = IsolationForest(contamination=0.2, random_state=42)
+    iso_forest.fit(X_processed)
+
+    # 5. DBSCAN + KNN Proxy (To allow DBSCAN to handle new inputs)
+    dbscan = DBSCAN(eps=8.5, min_samples=64)
+    clusters = dbscan.fit_predict(X_processed)
     
-    model = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('classifier', IsolationForest(contamination=0.5, random_state=42))
-    ])
+    knn_proxy = KNeighborsClassifier(n_neighbors=5)
+    knn_proxy.fit(X_processed, clusters)
     
-    model.fit(features_only)
-    
-    # 4. Create Baseline Template
+    # 6. Create Baseline for UI Input
     baseline = features_only.iloc[[0]].copy()
     baseline[numerical_cols] = features_only[numerical_cols].median().values
     baseline[categorical_cols] = features_only[categorical_cols].mode().iloc[0].values
     
-    return model, baseline
+    return preprocessor, iso_forest, knn_proxy, baseline
 
-# Initialize
+# Initialize models
 try:
-    model, baseline_template = load_and_train_model()
-except FileNotFoundError:
-    st.error("Error: 'StealthPhisher2025.csv' not found. Please upload the dataset to your repository.")
+    preprocessor, iso_model, db_model, baseline_template = load_and_train_models()
+except Exception as e:
+    st.error(f"⚠️ Deployment Error: {e}")
+    st.info("Check if your CSV file and requirements.txt are uploaded to GitHub.")
     st.stop()
 
 # --- STREAMLIT UI ---
-st.title("🛡️ Phishing Anomaly Detector")
-st.write("This prototype uses **Unsupervised Machine Learning** to detect suspicious email patterns.")
+st.title("🛡️ Phishing Detection: Isolation Forest vs. DBSCAN")
+st.write("With 5,000 training samples, the model now has a stronger baseline for 'Normal' behavior.")
 
-st.subheader("Simulate Email Features")
-col1, col2 = st.columns(2)
+st.sidebar.header("Test Email Features")
+url_len = st.sidebar.number_input("URL Length", value=20, help="Standard URLs are usually under 50 characters.")
+js_count = st.sidebar.number_input("JS Files", value=0, help="Legitimate emails rarely contain multiple JS attachments.")
+complexity = st.sidebar.slider("Complexity", 0.0, 1.0, 0.05, help="Randomness score of the URL.")
 
-with col1:
-    url_len = st.number_input("URL Length", min_value=0, value=30)
-    js_count = st.number_input("JS File Count", min_value=0, value=0)
-
-with col2:
-    complexity = st.slider("Character Complexity", 0.0, 1.0, 0.05)
-    
-if st.button("Analyze Pattern"):
-    # Prepare input for prediction
+if st.button("Run Dual-Model Analysis"):
+    # Prepare input
     input_df = baseline_template.copy()
     input_df['LengthOfURL'] = url_len
     input_df['CntFilesJS'] = js_count
     input_df['CharacterComplexity'] = complexity
     
-    prediction = model.predict(input_df)
+    input_scaled = preprocessor.transform(input_df)
     
+    # Predict
+    iso_res = iso_model.predict(input_scaled)[0]
+    db_res = db_model.predict(input_scaled)[0]
+    
+    # Format Labels
+    iso_label = "✅ LEGITIMATE" if iso_res == 1 else "🚨 PHISHING"
+    db_label = "✅ LEGITIMATE (Cluster)" if db_res != -1 else "🚨 PHISHING (Noise)"
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Isolation Forest")
+        st.metric("Detection Result", iso_label)
+        st.write("Analyzes how 'easy' it is to separate this point from the rest.")
+        
+    with col2:
+        st.subheader("DBSCAN (Density)")
+        st.metric("Detection Result", db_label)
+        st.write("Analyzes if this point lives in a crowded 'normal' neighborhood.")
+
     st.divider()
-    if prediction[0] == -1:
-        st.error("### ⚠️ Result: PHISHING ANOMALY")
-        st.write("The model identified this feature combination as a statistical outlier.")
+    if iso_res == 1 and db_res != -1:
+        st.success("### Final Verdict: SAFE")
+        st.write("Both models agree this email follows standard patterns.")
+    elif iso_res == -1 and db_res == -1:
+        st.error("### Final Verdict: MALICIOUS")
+        st.write("High confidence phishing attempt! Both algorithms flagged this as an anomaly.")
     else:
-        st.success("### ✅ Result: LEGITIMATE")
-        st.write("This pattern matches the majority of 'normal' emails in the training set.")
+        st.warning("### Final Verdict: SUSPICIOUS")
+        st.write("The models disagree. This email should be manually reviewed.")
