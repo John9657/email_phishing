@@ -35,7 +35,7 @@ def load_and_train_models():
     iso_forest.fit(X_scaled)
     
     # 5. Train DBSCAN & KNN Proxy (For Real-Time UI Prediction)
-    dbscan = DBSCAN(eps=0.5, min_samples=15)  
+    dbscan = DBSCAN(eps=8.5in_samples=64)
     clusters = dbscan.fit_predict(X_scaled)
     
     knn_proxy = KNeighborsClassifier(n_neighbors=5)
@@ -51,11 +51,11 @@ def load_and_train_models():
 try:
     scaler, iso_model, db_model, baseline_template, active_features = load_and_train_models()
 except Exception as e:
-    st.error(f"⚠️ Deployment Error: {e}")
+    st.error(f" Deployment Error: {e}")
     st.stop()
 
 # --- STREAMLIT UI ---
-st.title("🛡️ Phishing Detection: Dual-Model Analysis")
+st.title(" Phishing Detection: Dual-Model Analysis")
 st.write("Evaluating crucial email threat indicators by comparing **Isolation Forest** (Anomaly Detection) and **DBSCAN** (Density Clustering).")
 
 st.sidebar.header("Test Email Features")
@@ -132,20 +132,20 @@ if st.button("Run AI Analysis"):
     
     # --- ISOLATION FOREST UI PANEL ---
     with col1:
-        st.markdown("### 🌲 Isolation Forest")
+        st.markdown("###  Isolation Forest")
         if iso_res == 1:
-            st.success("**Verdict: ✅ LEGITIMATE**")
+            st.success("**Verdict: LEGITIMATE**")
             st.write("The model considers these feature parameters to be within normal, safe bounds.")
         else:
-            st.error("**Verdict: 🚨 PHISHING (Anomaly)**")
+            st.error("**Verdict: PHISHING (Anomaly)**")
             st.write("Threat detected! This model successfully isolated this email as a statistical anomaly.")
 
     # --- DBSCAN UI PANEL ---
     with col2:
-        st.markdown("### 📊 DBSCAN (Density)")
+        st.markdown("###  DBSCAN (Density)")
         if db_res != -1:
-            st.success("**Verdict: ✅ LEGITIMATE (Standard Cluster)**")
+            st.success("**Verdict:  LEGITIMATE (Standard Cluster)**")
             st.write("Because this model relies on density, it incorrectly grouped this within a normal neighborhood.")
         else:
-            st.error("**Verdict: 🚨 PHISHING (Noise/Outlier)**")
+            st.error("**Verdict:  PHISHING (Noise/Outlier)**")
             st.write("Threat detected! The data point was far enough away to be classified as noise.")
