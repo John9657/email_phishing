@@ -35,7 +35,7 @@ def load_and_train_models():
     iso_forest.fit(X_scaled)
     
     # 5. Train DBSCAN & KNN Proxy (For Real-Time UI Prediction)
-    dbscan = DBSCAN(eps=8.5, min_samples=64) 
+    dbscan = DBSCAN(eps=0.5, min_samples=15)  
     clusters = dbscan.fit_predict(X_scaled)
     
     knn_proxy = KNeighborsClassifier(n_neighbors=5)
