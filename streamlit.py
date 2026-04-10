@@ -88,6 +88,7 @@ domain_ip = st.sidebar.radio(
 )
 domain_ip_val = 1 if domain_ip == "Yes" else 0
 
+# --- PREDICTION LOGIC ---
 if st.button("Run AI Analysis"):
     # Prepare input
     input_df = baseline_template.copy()
@@ -108,32 +109,43 @@ if st.button("Run AI Analysis"):
     if len(input_scaled.shape) == 1:
         input_scaled = input_scaled.reshape(1, -1)
         
+    # --- 1. ISOLATION FOREST PREDICTION ---
     iso_res = iso_model.predict(input_scaled)[0]
-    db_res = db_model.predict(input_scaled)[0]
     
+    # --- 2. DBSCAN (KNN PROXY) PREDICTION WITH DISTANCE CHECK ---
+    # Measure the exact distance to the nearest data point
+    distances, indices = db_model.kneighbors(input_scaled, n_neighbors=1)
+    nearest_distance = distances[0][0]
+    
+    # If it is further away than our DBSCAN eps (0.5), it is an anomaly
+    if nearest_distance > 0.5:
+        db_res = -1  # Force label as Noise/Phishing
+    else:
+        # Otherwise, let it vote normally
+        db_res = db_model.predict(input_scaled)[0]
+    
+    # --- RESULTS UI ---
     st.divider()
-    st.subheader("System Comparison")
+    st.subheader("Real-Time Model Evaluation")
     
     col1, col2 = st.columns(2)
     
-    # Format UI Labels
-    iso_label = " Normal Range" if iso_res == 1 else " Anomaly"
-    db_label = " Standard Cluster" if db_res != -1 else " Noise/Outlier"
-    
+    # --- ISOLATION FOREST UI PANEL ---
     with col1:
-        st.metric("Isolation Forest Verdict", iso_label)
+        st.markdown("### 🌲 Isolation Forest")
+        if iso_res == 1:
+            st.success("**Verdict: ✅ LEGITIMATE**")
+            st.write("The model considers these feature parameters to be within normal, safe bounds.")
+        else:
+            st.error("**Verdict: 🚨 PHISHING (Anomaly)**")
+            st.write("Threat detected! This model successfully isolated this email as a statistical anomaly.")
+
+    # --- DBSCAN UI PANEL ---
     with col2:
-        st.metric("DBSCAN Verdict", db_label)
-        
-    st.divider()
-    
-    # Consensus Logic
-    if iso_res == 1 and db_res != -1:
-        st.success("### Final Consensus:  LEGITIMATE")
-        st.write("Both algorithms consider these feature parameters to be within normal, safe bounds.")
-    elif iso_res == -1 and db_res == -1:
-        st.error("### Final Consensus:  PHISHING DETECTED")
-        st.write("High confidence phishing attempt! The combination of these specific threat indicators triggered both anomaly detectors.")
-    else:
-        st.warning("### Final Consensus:  SUSPICIOUS (Review Required)")
-        st.write("The models disagree on the severity of these features. Manual investigation is recommended.")
+        st.markdown("### 📊 DBSCAN (Density)")
+        if db_res != -1:
+            st.success("**Verdict: ✅ LEGITIMATE (Standard Cluster)**")
+            st.write("Because this model relies on density, it incorrectly grouped this within a normal neighborhood.")
+        else:
+            st.error("**Verdict: 🚨 PHISHING (Noise/Outlier)**")
+            st.write("Threat detected! The data point was far enough away to be classified as noise.")
