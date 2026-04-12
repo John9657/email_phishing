@@ -1,1 +1,8 @@
-# email_phishing
+Email Phishing Detection System 
+A machine learning-based web application designed to detect phishing emails using unsupervised learning techniques 
+
+Project Overview 
+This project identifies malicious email patterns using the StealthPhiser 2025 dataset. It utilizes a dashboard interface to provide real-time analysis and visualaization of email threats 
+
+Core Features 
+Machine Learning Models implements unsupersived learning such as Isolation Forest. DBSCAN, and K-Means 
